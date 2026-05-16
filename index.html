@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>navigator.clipboard — No 8k Limit</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:   #0a0a0a; --bg2: #0e0e0e; --bg3: #060606;
+    --border: #1a1a1a; --border2: #2a2a2a;
+    --green: #00ff64; --green-dim: rgba(0,255,100,0.08); --green-btn: rgba(0,255,100,0.06);
+    --red: #ff4444;   --red-dim: rgba(255,68,68,0.1);
+    --gold: #ffd700;
+    --fg: #ccc; --fg2: #888; --fg3: #555; --fg4: #444; --fg5: #333;
+  }
+  html, body { height: 100%; background: var(--bg); color: var(--fg); font-family: 'Courier New', monospace; font-size: 13px; }
+  #app { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+  /* HEADER */
+  #header {
+    background: var(--bg2); border-bottom: 1px solid var(--border);
+    padding: 12px 24px; display: flex; align-items: center; gap: 12px; flex-shrink: 0; flex-wrap: wrap;
+  }
+  .hdr-label { color: var(--green); font-size: 10px; letter-spacing: 3px; }
+  .hdr-sep   { color: var(--fg5); }
+  .hdr-sub   { color: var(--fg2); font-size: 10px; letter-spacing: 2px; }
+  #hdr-status { margin-left: auto; font-size: 10px; }
+
+  /* SIZE CONTROL */
+  #size-bar {
+    background: var(--bg2); border-bottom: 1px solid var(--border);
+    padding: 10px 24px; display: flex; align-items: center; gap: 16px; flex-shrink: 0; flex-wrap: wrap;
+  }
+  #size-bar label { font-size: 10px; color: var(--fg2); letter-spacing: 2px; }
+  #size-slider {
+    -webkit-appearance: none; appearance: none;
+    width: 220px; height: 3px; background: var(--border2); outline: none; border-radius: 2px; cursor: pointer;
+  }
+  #size-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--green); cursor: pointer; }
+  #size-display { font-size: 13px; color: var(--green); font-weight: 700; min-width: 60px; }
+  #btn-build {
+    padding: 6px 16px; background: var(--green-btn); border: 1px solid var(--green);
+    color: var(--green); font-family: monospace; font-size: 10px; letter-spacing: 2px;
+    text-transform: uppercase; cursor: pointer; border-radius: 2px;
+  }
+  #btn-build:disabled { opacity: 0.4; cursor: not-allowed; }
+  #book-hint { font-size: 10px; color: var(--fg5); }
+
+  /* PROGRESS */
+  #progress-wrap {
+    display: none; background: var(--bg3); border-bottom: 1px solid var(--border);
+    padding: 10px 24px; flex-shrink: 0;
+  }
+  #progress-wrap.visible { display: block; }
+  #progress-label  { font-size: 10px; color: var(--fg2); letter-spacing: 2px; margin-bottom: 6px; }
+  #progress-track  { background: var(--border2); height: 3px; border-radius: 2px; overflow: hidden; }
+  #progress-fill   { height: 100%; width: 0%; background: var(--green); transition: width 0.08s linear; }
+  #progress-detail { font-size: 10px; color: var(--fg2); margin-top: 5px; }
+
+  /* MAIN */
+  #main { flex: 1; display: flex; overflow: hidden; }
+  .panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .panel:first-child { border-right: 1px solid var(--border); }
+
+  .panel-header {
+    padding: 10px 20px; border-bottom: 1px solid var(--border); background: var(--bg2);
+    display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; flex-wrap: wrap; gap: 8px;
+  }
+  .ptitle { display: flex; align-items: center; gap: 8px; }
+  .plabel { font-size: 10px; letter-spacing: 2px; }
+  .psub   { color: var(--fg5); font-size: 10px; }
+
+  .badges { display: flex; gap: 6px; }
+  .badge {
+    display: inline-flex; flex-direction: column; align-items: center;
+    background: rgba(255,255,255,0.03); border: 1px solid var(--border2);
+    border-radius: 4px; padding: 3px 10px; min-width: 72px;
+  }
+  .badge.accent { background: var(--green-dim); border-color: var(--green); }
+  .badge-lbl { font-size: 9px; color: var(--fg2); text-transform: uppercase; letter-spacing: 2px; }
+  .badge-val { font-size: 15px; font-weight: 700; color: var(--fg); }
+  .badge.accent .badge-val { color: var(--green); }
+
+  textarea {
+    flex: 1; background: var(--bg); color: var(--fg3); border: none;
+    resize: none; padding: 14px 20px; font-family: monospace;
+    font-size: 11px; line-height: 1.6; outline: none;
+  }
+  textarea::placeholder { color: var(--fg5); }
+
+  .pfooter { padding: 10px 20px; border-top: 1px solid var(--border); background: var(--bg2); flex-shrink: 0; }
+
+  button.action {
+    width: 100%; padding: 11px;
+    background: var(--green-btn); border: 1px solid var(--green); color: var(--green);
+    font-family: monospace; font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+    cursor: pointer; border-radius: 2px; transition: all 0.15s;
+  }
+  button.action.neutral { background: rgba(255,255,255,0.02); border-color: var(--fg4); color: var(--fg2); }
+  button.action.success { background: rgba(0,255,100,0.1);    border-color: var(--green); color: var(--green); }
+  button.action.error   { background: var(--red-dim);          border-color: var(--red);   color: var(--red); }
+  button.action:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* VERDICT */
+  #verdict {
+    display: none; background: rgba(0,255,100,0.05); border-top: 1px solid var(--green);
+    padding: 9px 24px; align-items: center; gap: 12px; flex-shrink: 0;
+  }
+  #verdict.visible { display: flex; }
+  #verdict-label { color: var(--green); font-size: 11px; letter-spacing: 3px; white-space: nowrap; }
+  #verdict-text  { color: var(--green); font-size: 11px; }
+
+  /* LOG */
+  #log-wrap { height: 110px; background: var(--bg3); border-top: 1px solid var(--border); overflow-y: auto; padding: 7px 20px; flex-shrink: 0; }
+  #log-title { color: var(--fg5); font-size: 9px; letter-spacing: 3px; margin-bottom: 3px; }
+  .ll { font-size: 10px; line-height: 1.85; }
+  .ll .ts { color: var(--fg5); margin-right: 10px; }
+  .ll.info    span:last-child { color: var(--fg2); }
+  .ll.success span:last-child { color: var(--green); }
+  .ll.warn    span:last-child { color: var(--gold); }
+  .ll.error   span:last-child { color: var(--red); }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="header">
+    <span class="hdr-label">navigator.clipboard</span>
+    <span class="hdr-sep">|</span>
+    <span class="hdr-sub">PROOF OF CONCEPT — NO 8k LIMIT</span>
+    <span id="hdr-status" style="color:var(--gold)">⟳ LOADING war-and-peace.txt...</span>
+  </div>
+
+  <div id="size-bar">
+    <label>TARGET SIZE</label>
+    <input type="range" id="size-slider" min="1" max="200" value="5" step="1">
+    <span id="size-display">5 MB</span>
+    <button id="btn-build" disabled>▶ BUILD PAYLOAD</button>
+    <span id="book-hint"></span>
+  </div>
+
+  <div id="progress-wrap">
+    <div id="progress-label">BUILDING PAYLOAD</div>
+    <div id="progress-track"><div id="progress-fill"></div></div>
+    <div id="progress-detail">—</div>
+  </div>
+
+  <div id="main">
+
+    <div class="panel">
+      <div class="panel-header">
+        <div class="ptitle">
+          <span class="plabel" style="color:var(--green)">SOURCE</span>
+          <span class="psub">WAR AND PEACE — TOLSTOY (PUBLIC DOMAIN)</span>
+        </div>
+        <div class="badges">
+          <div class="badge" id="b-src-chars"><span class="badge-lbl">CHARS</span><span class="badge-val">—</span></div>
+          <div class="badge" id="b-src-mb">   <span class="badge-lbl">SIZE</span> <span class="badge-val">—</span></div>
+          <div class="badge accent" id="b-src-mult"><span class="badge-lbl">×8000</span><span class="badge-val">—</span></div>
+        </div>
+      </div>
+      <textarea id="src-text" readonly placeholder="Build a payload using the slider above..."></textarea>
+      <div class="pfooter">
+        <button class="action" id="btn-copy" disabled>→ navigator.clipboard.writeText(...)</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <div class="ptitle">
+          <span class="plabel" id="dest-label" style="color:var(--fg2)">DESTINATION</span>
+          <span id="match-badge" style="display:none;color:var(--green);font-size:10px;margin-left:8px">✓ MATCH</span>
+        </div>
+        <div class="badges">
+          <div class="badge" id="b-dst-chars"><span class="badge-lbl">CHARS</span><span class="badge-val">—</span></div>
+          <div class="badge" id="b-dst-mb">   <span class="badge-lbl">SIZE</span> <span class="badge-val">—</span></div>
+          <div class="badge" id="b-dst-status" style="display:none"><span class="badge-lbl">STATUS</span><span class="badge-val">—</span></div>
+        </div>
+      </div>
+      <textarea id="dst-text" readonly placeholder="Paste here via the button after copying from source..."></textarea>
+      <div class="pfooter">
+        <button class="action neutral" id="btn-paste">← navigator.clipboard.readText()</button>
+      </div>
+    </div>
+
+  </div>
+
+  <div id="verdict">
+    <span id="verdict-label">✓✓ VERDICT:</span>
+    <span id="verdict-text"></span>
+  </div>
+
+  <div id="log-wrap">
+    <div id="log-title">EVENT LOG</div>
+    <div id="log"></div>
+  </div>
+
+</div>
+<script>
+// ── state ──────────────────────────────────────────────────────────────────
+let rawBook    = "";
+let sourceText = "";
+let workerBusy = false;
+
+// ── util ───────────────────────────────────────────────────────────────────
+const fmtN = n => Number(n).toLocaleString("de-DE");
+const toMB = s => (new TextEncoder().encode(s).length / (1024 * 1024)).toFixed(1);
+const nowTS = () => new Date().toISOString().slice(11, 23);
+
+function log(msg, type = "info") {
+  const wrap = document.getElementById("log");
+  const d = document.createElement("div");
+  d.className = "ll " + type;
+  d.innerHTML = `<span class="ts">${nowTS()}</span><span>${msg}</span>`;
+  wrap.appendChild(d);
+  document.getElementById("log-wrap").scrollTop = 99999;
+}
+
+function setBadge(id, val, accent) {
+  const el = document.getElementById(id);
+  el.querySelector(".badge-val").textContent = val;
+  accent ? el.classList.add("accent") : el.classList.remove("accent");
+  el.style.display = "";
+}
+
+// ── inline Web Worker ──────────────────────────────────────────────────────
+const WORKER_SRC = `
+self.onmessage = function(e) {
+  const { book, targetBytes } = e.data;
+  const CHUNK = 4000;
+  const entries = [];
+  let pos = 0, num = 1;
+
+  // Slice book text into chapter entries
+  while (pos < book.length) {
+    entries.push({ chapter: num++, text: book.slice(pos, pos + CHUNK) });
+    pos += CHUNK;
+  }
+
+  // Estimate current JSON size (rough)
+  let approxBytes = book.length + entries.length * 22;
+  const bookBytes = approxBytes;
+
+  // Pad with synthetic entries until we hit target
+  if (approxBytes < targetBytes) {
+    const PAD = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua ut enim ad minim veniam quis nostrud exercitation ullamco laboris. ".repeat(3);
+    const perEntry = PAD.length + 22;
+    const needed = Math.ceil((targetBytes - approxBytes) / perEntry);
+    const step = Math.max(1, Math.floor(needed / 200));
+    for (let i = 0; i < needed; i++) {
+      entries.push({ pad: i + 1, v: PAD });
+      approxBytes += perEntry;
+      if (i % step === 0) {
+        self.postMessage({ type: "progress", done: approxBytes, total: targetBytes });
+      }
+    }
+  }
+
+  self.postMessage({ type: "progress", done: targetBytes, total: targetBytes });
+
+  const payload = JSON.stringify({
+    title: "War and Peace",
+    author: "Leo Tolstoy",
+    year: 1869,
+    license: "Public Domain — Project Gutenberg",
+    note: "Padded with synthetic entries to demonstrate navigator.clipboard has no character or byte size limit.",
+    entry_count: entries.length,
+    entries: entries
+  });
+
+  self.postMessage({ type: "done", payload: payload });
+};
+`;
+
+function buildWithWorker(targetMB, onProgress, onDone) {
+  const blob   = new Blob([WORKER_SRC], { type: "application/javascript" });
+  const blobURL = URL.createObjectURL(blob);
+  const worker  = new Worker(blobURL);
+  worker.onmessage = ev => {
+    if (ev.data.type === "progress") {
+      onProgress(ev.data.done, ev.data.total);
+    } else if (ev.data.type === "done") {
+      URL.revokeObjectURL(blobURL);
+      worker.terminate();
+      onDone(ev.data.payload);
+    }
+  };
+  worker.onerror = err => log("Worker error: " + err.message, "error");
+  worker.postMessage({ book: rawBook, targetBytes: targetMB * 1024 * 1024 });
+}
+
+// ── apply source payload ───────────────────────────────────────────────────
+function applySource(text) {
+  sourceText = text;
+  document.getElementById("src-text").value = text;
+  setBadge("b-src-chars", fmtN(text.length));
+  setBadge("b-src-mb",    toMB(text) + " MB");
+  setBadge("b-src-mult",  (text.length / 8000).toFixed(0) + "×", true);
+  const btn = document.getElementById("btn-copy");
+  btn.disabled = false;
+  btn.className = "action";
+  btn.textContent = `→ navigator.clipboard.writeText( ${toMB(text)} MB )`;
+}
+
+// ── slider ─────────────────────────────────────────────────────────────────
+const slider  = document.getElementById("size-slider");
+const display = document.getElementById("size-display");
+const hint    = document.getElementById("book-hint");
+
+function updateHint() {
+  if (!rawBook) return;
+  const bookMB = parseFloat(toMB(rawBook));
+  const v = parseInt(slider.value, 10);
+  hint.textContent = v > bookMB
+    ? `(book is ${bookMB} MB — padding with synthetic JSON to reach ${v} MB)`
+    : `(book is ${bookMB} MB — payload will be ~${v} MB of actual text)`;
+}
+
+slider.addEventListener("input", () => {
+  display.textContent = slider.value + " MB";
+  updateHint();
+});
+
+// ── build ──────────────────────────────────────────────────────────────────
+function triggerBuild() {
+  if (!rawBook || workerBusy) return;
+  const targetMB = parseInt(slider.value, 10);
+  workerBusy = true;
+
+  document.getElementById("btn-build").disabled = true;
+  document.getElementById("btn-copy").disabled  = true;
+  const pw = document.getElementById("progress-wrap");
+  const pf = document.getElementById("progress-fill");
+  const pd = document.getElementById("progress-detail");
+  pw.classList.add("visible");
+  pf.style.width = "0%";
+  pd.textContent  = "Starting worker...";
+
+  log(`Building ${targetMB} MB payload off main thread...`, "info");
+
+  buildWithWorker(
+    targetMB,
+    (done, total) => {
+      const pct = Math.min(100, (done / total) * 100).toFixed(0);
+      pf.style.width = pct + "%";
+      pd.textContent = `${pct}%  —  ${(done/(1024*1024)).toFixed(1)} / ${(total/(1024*1024)).toFixed(1)} MB`;
+    },
+    payload => {
+      workerBusy = false;
+      pw.classList.remove("visible");
+      document.getElementById("btn-build").disabled = false;
+      applySource(payload);
+      log(`✓ Payload ready: ${fmtN(payload.length)} chars (${toMB(payload)} MB)`, "success");
+    }
+  );
+}
+
+document.getElementById("btn-build").addEventListener("click", triggerBuild);
+
+// ── load book ──────────────────────────────────────────────────────────────
+async function loadBook() {
+  log("Fetching ./war-and-peace.txt ...", "info");
+  try {
+    const r = await fetch("./war-and-peace.txt");
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    rawBook = await r.text();
+    const bookMB = toMB(rawBook);
+    log(`✓ Loaded ${fmtN(rawBook.length)} chars (${bookMB} MB)`, "success");
+    document.getElementById("hdr-status").style.color = "var(--green)";
+    document.getElementById("hdr-status").textContent = "✓ BOOK LOADED (" + bookMB + " MB)";
+    document.getElementById("btn-build").disabled = false;
+    updateHint();
+    triggerBuild(); // auto-build at default 5 MB
+  } catch (err) {
+    log("✗ Could not load war-and-peace.txt: " + err.message, "error");
+    log("→ Download from gutenberg.org/files/2600/2600-0.txt and rename to war-and-peace.txt", "warn");
+    document.getElementById("hdr-status").style.color = "var(--red)";
+    document.getElementById("hdr-status").textContent = "✗ war-and-peace.txt NOT FOUND";
+  }
+}
+
+// ── copy ───────────────────────────────────────────────────────────────────
+document.getElementById("btn-copy").addEventListener("click", async () => {
+  if (!sourceText) return;
+  const btn = document.getElementById("btn-copy");
+  btn.disabled = true;
+  btn.textContent = "⟳ WRITING TO SYSTEM CLIPBOARD...";
+  log("navigator.clipboard.writeText() — " + toMB(sourceText) + " MB ...", "info");
+  const t0 = performance.now();
+  try {
+    await navigator.clipboard.writeText(sourceText);
+    const ms = (performance.now() - t0).toFixed(1);
+    btn.className = "action success";
+    btn.textContent = "✓ COPIED " + toMB(sourceText) + " MB (" + ms + "ms)";
+    btn.disabled = false;
+    log("✓ Written to clipboard in " + ms + "ms — no size limit hit.", "success");
+  } catch (err) {
+    btn.className = "action error";
+    btn.textContent = "✗ COPY FAILED — see log";
+    btn.disabled = false;
+    log("✗ writeText: " + err.name + ": " + err.message, "error");
+  }
+});
+
+// ── paste ──────────────────────────────────────────────────────────────────
+document.getElementById("btn-paste").addEventListener("click", async () => {
+  const btn = document.getElementById("btn-paste");
+  btn.disabled = true;
+  btn.textContent = "⟳ READING FROM SYSTEM CLIPBOARD...";
+  log("navigator.clipboard.readText() ...", "info");
+  const t0 = performance.now();
+  try {
+    const text = await navigator.clipboard.readText();
+    const ms = (performance.now() - t0).toFixed(1);
+    document.getElementById("dst-text").value = text;
+
+    setBadge("b-dst-chars", fmtN(text.length), text.length > 0);
+    setBadge("b-dst-mb",    toMB(text) + " MB");
+
+    const match = text.length > 0 && text.length === sourceText.length;
+    const stEl = document.getElementById("b-dst-status");
+    stEl.style.display = "";
+    stEl.querySelector(".badge-val").textContent = match ? "MATCH ✓" : text.length > 8000 ? ">8k ✓" : "?";
+    if (match || text.length > 8000) stEl.classList.add("accent");
+
+    btn.className = "action success";
+    btn.textContent = "✓ PASTED " + toMB(text) + " MB (" + ms + "ms)";
+    btn.disabled = false;
+    log("✓ Read " + fmtN(text.length) + " chars (" + toMB(text) + " MB) in " + ms + "ms", "success");
+
+    if (match) {
+      document.getElementById("dest-label").style.color = "var(--green)";
+      document.getElementById("match-badge").style.display = "";
+      document.getElementById("verdict").classList.add("visible");
+      document.getElementById("verdict-text").textContent =
+        fmtN(text.length) + " chars (" + toMB(text) + " MB) transferred via navigator.clipboard — " +
+        (text.length / 8000).toFixed(0) + "× the alleged 8000-char limit. No such limit exists in the Clipboard API spec.";
+      log("✓✓ CHAR COUNT MATCHES SOURCE. Transfer complete. Devs were wrong.", "success");
+    } else if (text.length > 8000) {
+      log("✓ " + fmtN(text.length) + " chars > 8000. The 8k limit claim is false.", "success");
+    }
+  } catch (err) {
+    btn.className = "action error";
+    btn.textContent = "✗ PASTE FAILED — see log";
+    btn.disabled = false;
+    log("✗ readText: " + err.name + ": " + err.message, "error");
+    if (err.name === "NotAllowedError")
+      log("Tip: browser requires clipboard-read permission — click Allow when prompted.", "warn");
+  }
+});
+
+// ── boot ───────────────────────────────────────────────────────────────────
+loadBook();
+</script>
+</body>
+</html>
